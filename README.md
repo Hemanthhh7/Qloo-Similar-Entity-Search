@@ -26,5 +26,5 @@ This project is a *Streamlit web application* that uses the *Qloo API* to find s
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/your-username/qloo-similar-search.git
+git clone https://qloo-similar-entity-search-g9taptrw39qtgwh8wdb2ow.streamlit.app
 cd qloo-similar-search
