@@ -1,30 +1,25 @@
 # 🎬 Qloo Similar Entity Search
 
-This project is a *Streamlit web application* that uses the *Qloo API* to find similar entities (like movies, artists, or celebrities) based on user input. It demonstrates basic integration with Qloo's hackathon API and presents the results in a clean UI with rate limiting and normalization logic.
+This project uses the Qloo API to fetch and display similar entities (movies, artists, etc.) based on a user query.
 
----
+## 🔗 Live Demo
+
+👉 [Click to Try the App](https://qloo-similar-entity-search-g9taptrw39qtgwh8wdb2ow.streamlit.app/)
 
 ## 🚀 Features
 
-- 🔍 Search for entities (movies, artists, etc.)
-- 🧠 Uses Qloo API for recommendation-style results
-- 🧼 Removes duplicates using normalization
-- ⚡ Handles API rate-limiting
-- 🎨 Clean UI using Streamlit
+- 🔍 Search for movies, artists, or entities
+- 🧠 Uses Qloo’s AI-powered recommendations
+- ✅ Filters out duplicates
+- ⚡ Fast, clean UI with Streamlit
 
----
+## 📸 Demo Video
+
+🎥 [Watch the Demo](#) ([Replace with YouTube/Drive/Streamable link](https://drive.google.com/file/d/1MeAUTauLEpVEwKDO11wNpVVEbTJSLUKM/view?usp=sharing))
 
 ## 🛠 Tech Stack
 
-- *Python*
-- *Streamlit*
-- *Qloo Hackathon API*
+- Python
+- Streamlit
+- Qloo API
 
----
-
-## 🧪 How to Run Locally
-
-### 1. Clone the repository
-```bash
-git clone(https://qloo-similar-entity-search-g9taptrw39qtgwh8wdb2ow.streamlit.app/)
-cd qloo-similar-search
