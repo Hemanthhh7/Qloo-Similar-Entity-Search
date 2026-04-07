@@ -1,2 +1,10 @@
 streamlit
 requests
+pandas
+numpy
+matplotlib
+scikit-learn
+xgboost
+tensorflow
+plotly
+streamlit-lottie
