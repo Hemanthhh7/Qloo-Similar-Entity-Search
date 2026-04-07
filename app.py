@@ -6,32 +6,24 @@ import numpy as np
 from datetime import date, timedelta
 
 from xgboost import XGBRegressor
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 
 st.set_page_config(page_title="AquaGenesis Intelligence", layout="wide")
 
-# ================= SEASON CONFIG =================
-SEASON_COLORS = {
-    "Winter (Decâ€“Feb)": "#3B82F6",
-    "Summer (Marâ€“May)": "#F97316",
-    "Monsoon (Junâ€“Sep)": "#10B981",
-    "Post-Monsoon (Octâ€“Nov)": "#8B5CF6"
-}
+# ================= SAFE API =================
+def safe_api_call(url, params, retries=3):
+    for i in range(retries):
+        try:
+            res = requests.get(url, params=params, timeout=15)
+            if res.status_code == 200:
+                return res.json()
+        except:
+            continue
+    return None
 
-SEASON_ORDER = [
-    "Winter (Decâ€“Feb)",
-    "Summer (Marâ€“May)",
-    "Monsoon (Junâ€“Sep)",
-    "Post-Monsoon (Octâ€“Nov)"
-]
-
-# ================= SIDEBAR =================
-st.sidebar.title("ðŸŒŠ AquaGenesis")
-st.sidebar.markdown("Hybrid AI Atmospheric Water Intelligence")
-
+# ================= STATES =================
 STATES = {
     "Andhra Pradesh (Amaravati)": (16.5730, 80.3575),
     "Arunachal Pradesh (Itanagar)": (27.0844, 93.6053),
@@ -63,12 +55,10 @@ STATES = {
     "West Bengal (Kolkata)": (22.5726, 88.3639)
 }
 
-state = st.sidebar.selectbox("Select State", list(STATES.keys()))
-run = st.sidebar.button("Run Full Analysis")
-
-# ================= FETCH WEATHER =================
+# ================= FETCH =================
 def fetch_weather(lat, lon, start, end):
     url = "https://archive-api.open-meteo.com/v1/archive"
+
     params = {
         "latitude": lat,
         "longitude": lon,
@@ -78,7 +68,10 @@ def fetch_weather(lat, lon, start, end):
         "timezone": "auto"
     }
 
-    r = requests.get(url, params=params).json()
+    r = safe_api_call(url, params)
+
+    if r is None or "hourly" not in r:
+        return None
 
     df = pd.DataFrame({
         "time": pd.to_datetime(r["hourly"]["time"]),
@@ -89,170 +82,98 @@ def fetch_weather(lat, lon, start, end):
     }).dropna()
 
     df["water_yield"] = (df["humidity"]/100)*(df["temperature"]-df["dew_point"])*0.1
-    df["month"] = df["time"].dt.month
-
-    df["season"] = df["month"].apply(
-        lambda m: "Winter (Decâ€“Feb)" if m in [12,1,2] else
-        "Summer (Marâ€“May)" if m in [3,4,5] else
-        "Monsoon (Junâ€“Sep)" if m in [6,7,8,9] else
-        "Post-Monsoon (Octâ€“Nov)"
-    )
 
     return df
 
-# ================= TRAIN HYBRID MODEL =================
+# ================= TRAIN REAL MODEL =================
 @st.cache_resource
 def train_models():
     all_data = []
-    end = date.today() - timedelta(days=1)
-    start = end - timedelta(days=90)
 
-    for lat, lon in STATES.values():
-        try:
-            df = fetch_weather(lat, lon, start, end)
+    end = date.today() - timedelta(days=1)
+    start = end - timedelta(days=30)
+
+    for state, (lat, lon) in STATES.items():
+        df = fetch_weather(lat, lon, start, end)
+        if df is not None:
             all_data.append(df)
-        except:
-            continue
+
+    if not all_data:
+        return None, None, None
 
     full_df = pd.concat(all_data)
 
     X = full_df[["temperature","humidity","dew_point","pressure"]]
     y = full_df["water_yield"]
 
-    X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, shuffle=False)
-
-    xgb = XGBRegressor(n_estimators=150, learning_rate=0.05, max_depth=5)
-    xgb.fit(X_train, y_train)
+    xgb = XGBRegressor(n_estimators=100)
+    xgb.fit(X, y)
 
     scaler = MinMaxScaler()
     scaled = scaler.fit_transform(full_df[["water_yield"]])
 
-    window = 12
     X_lstm, y_lstm = [], []
-
-    for i in range(window, len(scaled)):
-        X_lstm.append(scaled[i-window:i])
+    for i in range(12, len(scaled)):
+        X_lstm.append(scaled[i-12:i])
         y_lstm.append(scaled[i])
 
     X_lstm, y_lstm = np.array(X_lstm), np.array(y_lstm)
 
     lstm = Sequential()
-    lstm.add(LSTM(32, input_shape=(window,1)))
+    lstm.add(LSTM(32, input_shape=(12,1)))
     lstm.add(Dense(1))
     lstm.compile(optimizer='adam', loss='mse')
-    lstm.fit(X_lstm, y_lstm, epochs=2, batch_size=128, verbose=0)
+    lstm.fit(X_lstm, y_lstm, epochs=3, verbose=0)
 
     return xgb, lstm, scaler
 
 xgb, lstm, scaler = train_models()
 
-# ================= MAIN =================
-st.title("Atmospheric Water Intelligence Dashboard")
+# ================= UI =================
+st.title("🌊 AquaGenesis – 100% Real Data Mode")
 
-if run:
+if xgb is None:
+    st.error("❌ Unable to train model. API failed for all states.")
+    st.stop()
 
-    lat, lon = STATES[state]
+state = st.selectbox("Select State", list(STATES.keys()))
+lat, lon = STATES[state]
 
-    # ===== Past 7 Days =====
-    past = fetch_weather(lat, lon, date.today()-timedelta(days=7), date.today()-timedelta(days=1))
-    present_yield = past["water_yield"].iloc[-1]
+# ================= CURRENT =================
+past = fetch_weather(lat, lon, date.today()-timedelta(days=7), date.today())
 
-    st.metric("Current Water Yield (L/mÂ²/day)", round(present_yield,3))
+if past is None:
+    st.error("❌ Live data unavailable. Try again later.")
+    st.stop()
 
-    fig1 = go.Figure()
-    fig1.add_trace(go.Scatter(
-        x=past["time"],
-        y=past["water_yield"],
-        mode="lines",
-        line=dict(width=3)
-    ))
-    fig1.update_layout(
-        xaxis_title="Date",
-        yaxis_title="Water Yield (L/mÂ²/day)"
-    )
-    st.plotly_chart(fig1, use_container_width=True)
+st.metric("Current Water Yield", round(past["water_yield"].iloc[-1],3))
 
-    # ===== Seasonal =====
-    season_df = fetch_weather(lat, lon, date.today()-timedelta(days=365), date.today())
-    seasonal_avg = season_df.groupby("season")["water_yield"].mean()
-    seasonal_avg = seasonal_avg.reindex(
-        [s for s in SEASON_ORDER if s in seasonal_avg.index]
-    )
+# ================= GRAPH =================
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=past["time"], y=past["water_yield"]))
+st.plotly_chart(fig)
 
-    colors = [SEASON_COLORS[s] for s in seasonal_avg.index]
+# ================= FORECAST =================
+forecast_url = "https://api.open-meteo.com/v1/forecast"
+params = {
+    "latitude": lat,
+    "longitude": lon,
+    "hourly": "temperature_2m,relative_humidity_2m,dewpoint_2m,surface_pressure"
+}
 
-    fig2 = go.Figure()
-    fig2.add_trace(go.Bar(
-        x=seasonal_avg.index,
-        y=seasonal_avg.values,
-        marker_color=colors,
-        text=seasonal_avg.values.round(3),
-        textposition="outside"
-    ))
-    fig2.update_layout(
-        xaxis_title="Season",
-        yaxis_title="Average Water Yield (L/mÂ²/day)"
-    )
-    st.plotly_chart(fig2, use_container_width=True)
+f = safe_api_call(forecast_url, params)
 
-    # ===== Future 12 Hours =====
-    forecast_url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "hourly": "temperature_2m,relative_humidity_2m,dewpoint_2m,surface_pressure",
-        "timezone": "auto"
-    }
+if f is None:
+    st.error("❌ Forecast API failed.")
+    st.stop()
 
-    f = requests.get(forecast_url, params=params).json()
+future_df = pd.DataFrame({
+    "temperature": f["hourly"]["temperature_2m"],
+    "humidity": f["hourly"]["relative_humidity_2m"],
+    "dew_point": f["hourly"]["dewpoint_2m"],
+    "pressure": f["hourly"]["surface_pressure"]
+}).head(12)
 
-    future_df = pd.DataFrame({
-        "temperature": f["hourly"]["temperature_2m"],
-        "humidity": f["hourly"]["relative_humidity_2m"],
-        "dew_point": f["hourly"]["dewpoint_2m"],
-        "pressure": f["hourly"]["surface_pressure"]
-    }).head(12)
+xgb_pred = xgb.predict(future_df)
 
-    xgb_pred = xgb.predict(future_df)
-
-    scaled_input = scaler.transform(xgb_pred.reshape(-1,1))
-    lstm_input = scaled_input.reshape(1,12,1)
-    lstm_pred = scaler.inverse_transform(lstm.predict(lstm_input))[0][0]
-
-    hybrid_yield = (np.mean(xgb_pred)+lstm_pred)/2
-
-    fig3 = go.Figure()
-    fig3.add_trace(go.Scatter(
-        x=list(range(1,13)),
-        y=xgb_pred,
-        mode="lines",
-        line=dict(width=3)
-    ))
-    fig3.update_layout(
-        xaxis_title="Hours from Now (Next 12 Hours)",
-        yaxis_title="Predicted Water Yield (L/mÂ²/day)"
-    )
-    st.plotly_chart(fig3, use_container_width=True)
-
-    st.metric("Hybrid Predicted Yield (Next 12h Avg)", round(hybrid_yield,3))
-
-    # ===== Feasibility =====
-    if hybrid_yield > 0.5:
-        feasibility = "ðŸŸ¢ HIGH â€“ Suitable for Installation"
-    elif hybrid_yield > 0.3:
-        feasibility = "ðŸŸ¡ MODERATE â€“ Seasonal Use Recommended"
-    else:
-        feasibility = "ðŸ”´ LOW â€“ Not Recommended"
-
-    st.success(feasibility)
-
-    # ===== Future Scope =====
-    st.subheader("ðŸš§ Future Scope")
-    st.markdown("""
-    - District-level micro climate mapping  
-    - Long-term seasonal forecasting  
-    - Climate change projection integration  
-    - Smart IoT device deployment  
-    - Government water planning dashboards  
-    - AI-powered installation site optimization  
-    """)
+st.metric("Predicted Yield", round(np.mean(xgb_pred),3))
