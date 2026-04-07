@@ -1,5 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
+import plotly.express as px
 import requests
 import pandas as pd
 import numpy as np
@@ -86,7 +87,7 @@ def fetch_weather(lat, lon, start, end):
     r = safe_api_call(url, params)
 
     if r is None or "hourly" not in r:
-        return pd.DataFrame(), False  # False = not real
+        return pd.DataFrame(), False
 
     df = pd.DataFrame({
         "time": pd.to_datetime(r["hourly"]["time"]),
@@ -97,8 +98,7 @@ def fetch_weather(lat, lon, start, end):
     }).dropna()
 
     df["water_yield"] = (df["humidity"]/100)*(df["temperature"]-df["dew_point"])*0.1
-
-    return df, True  # True = real data
+    return df, True
 
 # ================= MODEL =================
 @st.cache_resource
@@ -144,14 +144,23 @@ if run:
 
     lat, lon = STATES[state]
 
+    # ===== MAP =====
+    map_df = pd.DataFrame({
+        "state": list(STATES.keys()),
+        "lat": [v[0] for v in STATES.values()],
+        "lon": [v[1] for v in STATES.values()]
+    })
+
+    st.subheader("🌍 India State Map")
+    st.map(map_df.rename(columns={"lat":"latitude","lon":"longitude"}))
+
+    # ===== DATA =====
     past, is_real = fetch_weather(lat, lon, date.today()-timedelta(days=7), date.today())
 
-    # 🔥 INDICATOR
-    if is_real:
-        st.success("🟢 Live Data Mode")
-    else:
-        st.warning("🟡 Demo Mode (Synthetic Data)")
+    # ===== ONE LINE INDICATOR =====
+    st.info(f"Data Source: {'REAL (Open-Meteo API)' if is_real else 'SYNTHETIC (Fallback Mode)'}")
 
+    if not is_real:
         past = pd.DataFrame({
             "time": pd.date_range(end=pd.Timestamp.now(), periods=168, freq="H"),
             "temperature": np.random.uniform(25, 35, 168),
@@ -167,7 +176,7 @@ if run:
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(x=past["time"], y=past["water_yield"]))
     fig1.update_layout(title="Past 7 Days", xaxis_title="Time", yaxis_title="Water Yield")
-    st.plotly_chart(fig1, use_container_width=True)
+    st.plotly_chart(fig1)
 
     # ===== SEASONAL =====
     season_df = past.copy()
@@ -199,13 +208,13 @@ if run:
     fig3.update_layout(title="Future Prediction", xaxis_title="Hours", yaxis_title="Yield")
     st.plotly_chart(fig3)
 
-    hybrid_yield = np.mean(xgb_pred)
-    st.metric("Predicted Yield", round(hybrid_yield,3))
+    hybrid = np.mean(xgb_pred)
+    st.metric("Predicted Yield", round(hybrid,3))
 
     # ===== FEASIBILITY =====
-    if hybrid_yield > 0.5:
+    if hybrid > 0.5:
         st.success("🟢 HIGH Feasibility")
-    elif hybrid_yield > 0.3:
+    elif hybrid > 0.3:
         st.warning("🟡 MODERATE Feasibility")
     else:
         st.error("🔴 LOW Feasibility")
@@ -216,5 +225,5 @@ if run:
     - District-level prediction  
     - Smart IoT integration  
     - Climate forecasting  
-    - Government planning dashboards  
+    - Government dashboards  
     """)
